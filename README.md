@@ -28,5 +28,11 @@ The Reduced Order Model (ROM) is intrusive. Hyperreduction methods include DEIM 
 Please read **CHANGELOG.md** for the latest updates.
 
 ## 4. Permission
-Please read the **license.txt**.
+***Important Notice***
+This project is provided under MIT License with additional restrictions:
+- Commercial use prohibited
+- Redistribution and modification not permitted without explicit permission
+- For academic research use only
+- Contact author for collaboration: xukeyu@csrc.ac.cn
+
 
