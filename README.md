@@ -16,7 +16,7 @@ The Reduced Order Model (ROM) is intrusive. Hyperreduction methods include DEIM 
     - 3D non-uniform or equal-ratio grid
     - Second-order Run–Kutta (RK2) time integration
     - Parallel GPU acceleration (CUDA supported)
-    - Compute the coupled PDE \(\xi(z)\) using BDF2, Richardson extrapolation, RK2, and integral methods
+    - Compute the coupled PDE $\xi(z)$ using BDF2, Richardson extrapolation, RK2, and integral methods
     - Comprehensive visualization tools
 - ROM
     - Affine parameter dependence
@@ -27,7 +27,45 @@ The Reduced Order Model (ROM) is intrusive. Hyperreduction methods include DEIM 
 ## 3. [Change Log](https://github.com/xukeyu-phy/Diffusion_Master_Equation/blob/main/CHANGELOG.md)
 Please read **CHANGELOG.md** for the latest updates.
 
-## 4. Permission
+
+## 4. Usage
+### 4.1 Requirements
+- Python 3.8+
+- Required packages:
+
+  ```bash
+  torch (PyTorch) >= 2.0
+  numpy >= 1.20
+  matplotlib >= 3.5
+  pathlib (standard library)
+  scipy
+  ```
+
+
+### 4.2 Running the FOM
+```bash
+python DME_main.py
+```
+
+This will:
+
+1. Generate a non-uniform 3D grid
+2. Run the time evolution
+3. Save results to `Out_data/` directory
+
+
+### 4.3 Running the ROM
+```bash
+python POD_main.py
+python ROM_main.py
+```
+*Note:* Requires pre-existing data files in `DME_dataset/` from FOM.
+
+### 4.4 Configuration
+Modify `config.py` to adjust parameters.
+
+
+## Permission
 ***Important Notice***
 
 This project is provided under MIT License with additional restrictions:
