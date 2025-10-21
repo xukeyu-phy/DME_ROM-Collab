@@ -29,6 +29,7 @@ Please read **CHANGELOG.md** for the latest updates.
 
 ## 4. Permission
 ***Important Notice***
+
 This project is provided under MIT License with additional restrictions:
 - Commercial use prohibited
 - Redistribution and modification not permitted without explicit permission
