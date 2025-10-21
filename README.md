@@ -49,9 +49,11 @@ python DME_main.py
 
 This will:
 
-1. Generate a non-uniform 3D grid
+1. Generate a non-uniform or equal-ratio 3D grid
 2. Run the time evolution
 3. Save results to `Out_data/` directory
+
+*Note:* We recommend using RK2 to calculate.
 
 
 ### 4.3 Running the ROM
