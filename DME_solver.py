@@ -44,11 +44,9 @@ class DMESolver:
                 dt = self.config.T_final - t
             t += dt
             t_iter += 1                   
-            if t_iter % 200 == 1:                   
-                rho_n0 = rho_n.clone()               
-                rho_n = self.runge_kutta_2_step(rho_n, dt, self.config.ghostcell, self.config.bc_type)
-                drho = torch.abs(rho_n - rho_n0)
-                l2_drho = torch.norm(drho, p=2)
+            if t_iter % 200 == 1:             
+                rho_n, resi = self.runge_kutta_1_step(rho_n, dt, self.config.ghostcell, self.config.bc_type)
+                l2_resi = torch.norm(torch.abs(resi), p=2)
 
                 xiz_n0 = self.xi[self.Nx//2, self.Ny//2, :, :]
                 self._update_pump_distribution(rho_n, self.xi_method)        
@@ -56,12 +54,12 @@ class DMESolver:
                 dxiz = torch.abs(xiz_n - xiz_n0)
                 l2_dxiz = torch.norm(dxiz, p=2)
 
-                print(f"Iter: {t_iter}, Time: {t:.6f}, l2_drho = {l2_drho:.4e}, l2_dxiz = {l2_dxiz:.4e} ")
-                if l2_drho < self.config.convergence_tol and l2_dxiz < self.config.convergence_tol :
-                    print(f'Convergence: l2_drho = {l2_drho:.6e}, l2_dxiz = {l2_dxiz:.4e}')
+                print(f"Iter: {t_iter}, Time: {t:.6f}, l2_residual = {l2_resi:.4e}, l2_dxiz = {l2_dxiz:.4e} ")
+                if l2_resi < self.config.convergence_tol and l2_dxiz < self.config.convergence_tol :
+                    print(f'Convergence: l2_residual = {l2_resi:.6e}, l2_dxiz = {l2_dxiz:.4e}')
                     break
             else:
-                rho_n = self.runge_kutta_2_step(rho_n, dt, self.config.ghostcell, self.config.bc_type)
+                rho_n, _ = self.runge_kutta_1_step(rho_n, dt, self.config.ghostcell, self.config.bc_type)
             
         end_time = time.time()
         runtime =  end_time - start_time
@@ -247,14 +245,11 @@ class DMESolver:
         return rhs_GNL
     
 
-    def runge_kutta_2_step(self, rho_n, dt, ghostcell=None, bc_type=None):
+    def runge_kutta_1_step(self, rho_n, dt, ghostcell=None, bc_type=None):
 
         k1 = self.rhs(rho_n)
         rho_1 = rho_n + 1.0 * dt * k1
         
-        k2 = self.rhs(rho_1)        
-        rho_new = rho_n + (dt/2.0) * (k1 + k2)
-        
-        return rho_new
+        return rho_new, k1
 
  
