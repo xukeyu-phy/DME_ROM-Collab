@@ -246,7 +246,6 @@ class DMESolver:
     
 
     def runge_kutta_1_step(self, rho_n, dt, ghostcell=None, bc_type=None):
-
         k1 = self.rhs(rho_n)
         rho_1 = rho_n + 1.0 * dt * k1
         
