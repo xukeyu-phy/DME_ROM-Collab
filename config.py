@@ -32,14 +32,25 @@ class Config:
         self.initial_condition_type = 'uniform' # Options: 'uniform'
         self.initial_value = 0.125              # Initial value for uniform condition
     
-    def _get_time_step(self, D):
+    def _get_time_step(self, phy_dict):
         min_dx = torch.min(self.dx)  
         min_dy = torch.min(self.dy)  
         min_dz = torch.min(self.dz)
         dd_min = min(min_dx, min_dy, min_dz)
-        dt = self.cfl * dd_min **2 / (6 * D)
+
+        eig_Asd = 1
+        eig_Afd = 10
+        eig_Ase = torch.sqrt(torch.tensor(3/8))
+        Q = max(self.Qa, self.Qb)
+
+        Gamma_Re = 12*D/dd_min **2 + (1+eta)*eig_Asd + eig_Afd*fD + R0*Q
+        Gamma_Im = eig_Ase * eta * 0.5
+
+        dt = self.cfl * 2 * Gamma_Re / (Gamma_Re**2 + Gamma_Im**2)
         # dt = self.cfl * dd_min
+        
         return dt.clone().detach().to(device=self.device, dtype=self.dtype)
+
     
     def _create_non_uniform_grid(self, data_dir):
         data_dir.mkdir(exist_ok=True)
