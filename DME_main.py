@@ -29,7 +29,7 @@ def main():
         config._create_non_uniform_grid(outdata_dir)
     dmesolver = DMESolver(device, dtype, phy_dict, grid_type, xi_method, outdata_dir)
     dmesolver._init_phy_ps(phy_dict)
-    dt = config._get_time_step(phy_dict['D'])
+    dt = config._get_time_step(phy_dict)
 
     result, xi = dmesolver._main_line(dt)
     torch.save(result, outdata_dir / f'HF_result.pt')
