@@ -1,22 +1,23 @@
 # DME_ROM-Collab
 
-This project simulates the 3D Diffusion Master Equation using the finite-difference method.
+This project simulates the 3D Diffusion Quantum Master Equation of spin-exchange optically pumped systems using second order finite-difference method.
+
 
 ## 1. Overview
 
 ### Full Order Model
-The Full Order Model (FOM) uses finite-difference methods with Runge–Kutta time integration. It solves coupled partial differential equations describing spin dynamics with optical pumping and diffusion effects.
+The Full Order Model (FOM) uses finite-difference methods with Runge–Kutta time integration. It solves coupled partial differential equations describing spin dynamics with spin destruction, fine-structure mixing, optical pumping, spin exchange and diffusion effects.
 
 ### Reduced Order Model
-The Reduced Order Model (ROM) is intrusive. Hyperreduction methods include DEIM and NQE (nonlinear quadratic expansion).
+The Reduced Order Model (ROM) is utilizing Proper Orthogonal Decomposition (POD) and Galerkin projection. Hyperreduction methods include Discrete Empirical Interpolation Method (DEIM) and nonlinear quadratic expansion (NQE).
 
 ## 2. Key Features
 
 - FOM
     - 3D non-uniform or equal-ratio grid
-    - Second-order Run–Kutta (RK2) time integration
+    - First-order Run–Kutta (RK1) time integration (Include RK2)
     - Parallel GPU acceleration (CUDA supported)
-    - Compute the coupled PDE $\xi(z)$ using BDF2, Richardson extrapolation, RK2, and integral methods
+    - Compute the coupled PDE $\xi(z)$ using Crank-Nicolson scheme(CN), econd-order backward differentiation formula (BDF2), and Exponential-integrator scheme with trapezoidal quadrature (EI).
     - Comprehensive visualization tools
 - ROM
     - Affine parameter dependence
@@ -39,6 +40,8 @@ Please read **CHANGELOG.md** for the latest updates.
   matplotlib >= 3.5
   pathlib (standard library)
   scipy
+  time
+  json
   ```
 
 
@@ -53,7 +56,7 @@ This will:
 2. Run the time evolution
 3. Save results to `Out_data/` directory
 
-*Note:* We recommend using RK2 to calculate.
+*Note:* We recommend using EI to calculate.
 
 
 ### 4.3 Running the ROM
