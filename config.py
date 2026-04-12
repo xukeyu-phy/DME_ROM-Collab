@@ -7,8 +7,8 @@ class Config:
         torch.set_default_dtype(dtype)
                 
         # Numerical Parameters  
-        self.T_final = 100.0       
-        self.cfl = 0.1              
+        self.T_final = 200000.0       
+        self.cfl = 0.8             
         self.convergence_tol = 1e-8  # Convergence tolerance
         self.ghostcell = 0           # Number of ghost cells
         
