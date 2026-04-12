@@ -56,16 +56,17 @@ class ROMSolver:
 
                 if t_iter % 200 == 1:                                
                     rho_r_n0 = rho_r_n.clone()               
-                    rho_r_n = self.runge_kutta_2_step(rho_r_n, dt, self.config.ghostcell, self.config.bc_type, 'update')
+                    rho_r_n = self.runge_kutta_1_step(rho_r_n, dt, self.config.ghostcell, self.config.bc_type, 'update')
                     drho = torch.abs(rho_r_n - rho_r_n0)
-
-                    l2_drho = torch.norm(drho, p=2) 
-                    print(f"Iter: {t_iter}, Time: {t:.6f}, l2_drho = {l2_drho:.4e}")                    
-                    if l2_drho < self.config.convergence_tol:
-                        print(f'Convergence: l2_drho = {l2_drho:.6e}')
+                    l2_drho = torch.norm(drho, p=2)
+                    l2_residual = torch.norm(torch.norm(residual), p=2)
+                    print(f"Iter: {t_iter}, Time: {t:.6f}, l2_drho = {l2_drho:.4e}")     
+                    
+                    if l2_residual < self.config.convergence_tol:
+                        print(f'Convergence: l2_residual = {l2_residual:.6e}, l2_drho = {l2_drho:.6e}')
                         break
                 else:
-                    rho_r_n = self.runge_kutta_2_step(rho_r_n, dt, self.config.ghostcell, self.config.bc_type, None)
+                    rho_r_n = self.runge_kutta_1_step(rho_r_n, dt, self.config.ghostcell, self.config.bc_type, None)
 
             iter_count += 1        
 
@@ -221,6 +222,13 @@ class ROMSolver:
         rho_new = rho_n + (dt/2.0) * (k1 + k2)
         
         return rho_new
+
+
+    def runge_kutta_1_step(self, rho_n, dt, ghostcell=None, bc_type=None, update=None):
+        k1 = self.rhs(rho_n, update)
+        rho_1 = rho_n + 1.0 * dt * k1
+        
+        return rho_1, k1
     
 
     def rom_DEIM_preperform(self):
