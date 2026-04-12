@@ -45,7 +45,7 @@ def main():
         phy_dict = json.load(f)
     romsolver = ROMSolver(r, rf, Phi_r, Phi_f, P_f, POD_mean, phy_dict, device, dtype, outdata_dir)
     
-    dt = config._get_time_step(phy_dict['D'])
+    dt = config._get_time_step(phy_dict)
     result = romsolver._main_line(dt)
     
     Nh = Phi_r.shape[0]
