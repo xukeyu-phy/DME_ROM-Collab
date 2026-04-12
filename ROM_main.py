@@ -20,7 +20,7 @@ outdata_dir = current_dir / "Out_data"
 fig_dir = current_dir / "Fig"
 
 device = torch.device('cpu')
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 dtype = torch.float64
 torch.set_default_dtype(dtype)
 torch.set_num_threads(1)
