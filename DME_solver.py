@@ -64,7 +64,7 @@ class DMESolver:
         end_time = time.time()
         runtime =  end_time - start_time
         print(f"Runtime: {runtime:.3f}s")    
-        return rho_n, self.xi
+        return rho_n, self.xi, self.xiz
 
 
     def _update_pump_distribution(self, rho, method):
@@ -84,7 +84,7 @@ class DMESolver:
         elif method == 'init':
             xi_z = torch.ones_like(z, device=self.device)
 
-        elif method == 'Richardson':
+        elif method == 'RE-BDF2':
             dz = self.config.dz
             Srho = torch.einsum('i,klmi->klm', self.config.S_z, rho)
             Srho = Srho.unsqueeze(-1)
@@ -97,7 +97,7 @@ class DMESolver:
             for ii in range(2, self.Nz):
                 xi_z[:, :, ii, :] = (4 * xi_z[:, :, ii-1, :] - xi_z[:, :, ii-2, :]) / (3 + 2 * self.config.OD * dz[:, :, ii-1] * (1 - 2 * Srho[:, :, ii, :]))        
 
-        elif method == 'BDF2':
+        elif method == 'BE-BDF2':
             dz = self.config.dz
             Srho = torch.einsum('i,klmi->klm', self.config.S_z, rho)
             Srho = Srho.unsqueeze(-1)
@@ -106,7 +106,7 @@ class DMESolver:
             for ii in range(2, self.Nz):
                 xi_z[:, :, ii, :] = (4 * xi_z[:, :, ii-1, :] - xi_z[:, :, ii-2, :]) / (3 + 2 * self.config.OD * dz[:, :, ii-1] * (1 - 2 * Srho[:, :, ii, :]))        
 
-        elif method == 'RK2':
+        elif method == 'CN':
             dz = self.config.dz
             Srho = torch.einsum('i,klmi->klm', self.config.S_z, rho)
             Srho = Srho.unsqueeze(-1)
@@ -116,7 +116,7 @@ class DMESolver:
             for ii in range(1, self.Nz):
                 xi_z[:, :, ii, :] = xi_z[:, :, ii-1, :] * (1 - f1[:, :, ii-1, :]) / (1 + f2[:, :, ii-1, :])
 
-        elif method == 'integral':
+        elif method == 'EI':
             dz = self.config.dz
             trapezoid_areas = 0.5 * (rho[:, :, :-1, :] + rho[:, :, 1:, :]) * dz
             integral_component = torch.zeros_like(rho)
@@ -132,6 +132,7 @@ class DMESolver:
             print(f'Wrong in Xi_z update!')
 
         self.xi = xi_xy * xi_z
+        self.xiz= xi_z
 
 
     def rhs(self, rho):
