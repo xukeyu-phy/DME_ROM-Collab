@@ -3,12 +3,26 @@ import json
 import torch
 import numpy as np
 import time
+import matplotlib
 import matplotlib.pyplot as plt
 from config import Config
 warnings.filterwarnings('ignore', category=RuntimeWarning, message='divide by zero encountered in matmul')
 warnings.filterwarnings('ignore', category=RuntimeWarning, message='overflow encountered in matmul')
 warnings.filterwarnings('ignore', category=RuntimeWarning, message='invalid value encountered in matmul')
 
+matplotlib.rcParams['font.family'] = 'serif'
+matplotlib.rcParams['font.serif'] = ['Times New Roman'] + matplotlib.rcParams['font.serif']
+matplotlib.rcParams['mathtext.fontset'] = 'stix'
+matplotlib.rcParams['font.size'] = 10         # Base font size
+matplotlib.rcParams['axes.labelsize'] = 11    # Axis labels slightly larger
+matplotlib.rcParams['axes.titlesize'] = 11
+matplotlib.rcParams['legend.fontsize'] = 9
+matplotlib.rcParams['xtick.labelsize'] = 8
+matplotlib.rcParams['ytick.labelsize'] = 8
+matplotlib.rcParams['xtick.direction'] = 'in' # Ticks inside
+matplotlib.rcParams['ytick.direction'] = 'in'
+matplotlib.rcParams['lines.linewidth'] = 1.0
+matplotlib.rcParams['figure.dpi'] = 300
 
 class POD_DEIM:
     def __init__(self, dataset_dir, outdata_dir, fig_dir, device=None, dtype=torch.float64):
@@ -30,12 +44,12 @@ class POD_DEIM:
 
             Phi_h, S_h, Vt_h, mean_h = self.perform_POD(snapshots)
             self.save_decomposition("POD", Phi_h, S_h, Vt_h, mean=mean_h)
-            self.plot_singular_values(S_h, trun_modes = self.r, save_path=self.fig_dir / "POD_singular_values.png")
+            self.plot_singular_values(S_h, trun_modes = self.r, save_path=self.fig_dir / "POD_singular_values.pdf")
             self.print_energy_analysis(S_h, "POD")
 
             Phi_F, P_F, S_F = self.perform_DEIM(F_snapshots)
             self.save_decomposition("DEIM", Phi_F, S_F, indices=P_F)
-            self.plot_singular_values(S_F, trun_modes = self.rf, save_path=self.fig_dir / "DEIM_singular_values.png")
+            self.plot_singular_values(S_F, trun_modes = self.rf, save_path=self.fig_dir / "DEIM_singular_values.pdf")
             self.print_energy_analysis(S_F, "DEIM")
         else:
             print("\n" + "="*60)
@@ -43,8 +57,8 @@ class POD_DEIM:
             print("="*60)
             Phi_h, S_h, Vt_h, mean_h, _ = self.load_decomposition("POD", load_mean=True)
             Phi_F, S_F, _, _, P_F = self.load_decomposition("DEIM", load_indices=True)
-            self.plot_singular_values(S_h, trun_modes = self.r, save_path=self.fig_dir / "POD_singular_values.png")
-            self.plot_singular_values(S_F, trun_modes = self.rf, save_path=self.fig_dir / "DEIM_singular_values.png")
+            self.plot_singular_values(S_h, trun_modes = self.r, save_path=self.fig_dir / "POD_singular_values.pdf")
+            self.plot_singular_values(S_F, trun_modes = self.rf, save_path=self.fig_dir / "DEIM_singular_values.pdf")
     
         print("\n" + "="*60)
         print("COMPLETED")
@@ -163,51 +177,38 @@ class POD_DEIM:
     # Plot
     # ======================================================
     def plot_singular_values(self, S, energy_threshold=1e-10, trun_modes=5, save_path=None):
-        S_np = S.cpu().numpy() if isinstance(S, torch.Tensor) else S
-        energy = np.cumsum(S_np**2) / np.sum(S_np**2)
-        
-        # 修正条件判断逻辑
-        if trun_modes is None:
-            trun_modes = max(np.where(energy >= 1 - energy_threshold)[0][0] + 1, 5)
-        else:
-            modes_1 = np.where(energy >= 1 - energy_threshold)[0][0] + 1
-            modes_2 = trun_modes
-            modes_3 = np.where(S_np <= S_np[0] * 1e-5)[0][0] + 1 if len(np.where(S_np <= S_np[0] * 1e-4)[0]) > 0 else len(S_np)
-            trun_modes = max(modes_1, modes_2, modes_3)
+        from matplotlib.ticker import FormatStrFormatter
+        S_np = S.cpu().numpy() if 'torch' in str(type(S)) else np.asarray(S)
+
         plt_modes = min(50, len(S_np))
+        x = np.arange(1, plt_modes + 1)
 
-        fig, ax1 = plt.subplots(figsize=(10, 6))
-        ax1.semilogy(np.arange(1, plt_modes + 1), S_np[:plt_modes], '.-', color='tab:blue', linewidth=1.2, label='Singular values')
-        ax1.set_xlabel('Mode index')
-        ax1.set_ylabel('Singular value', color='tab:blue')
-        ax1.tick_params(axis='y', labelcolor='tab:blue')
-        ax2 = ax1.twinx()
-        ax2.plot(np.arange(1, plt_modes + 1), energy[:plt_modes], 'x-', color='tab:red', linewidth=1.2, label='Cumulative energy')
-        ax2.set_ylabel('Cumulative energy', color='tab:red')
-        ax2.tick_params(axis='y', labelcolor='tab:red')
-        ax2.yaxis.set_major_formatter(plt.FormatStrFormatter('%.4f'))
-        if trun_modes <= plt_modes:
-            ax1.axvline(x=trun_modes, color='k', linestyle='--', linewidth=0.5)
-            ax1.text(trun_modes + 0.7, 1e-2 * max(S[:plt_modes]),
-                    f'r={trun_modes}',
-                    rotation=0, verticalalignment='center', horizontalalignment='center')
-            trunc_sv = S[trun_modes - 1]
-            ax1.text(trun_modes, trunc_sv * 1.5, r'$\sigma = $' + f'{trunc_sv:.2e}', 
-                fontsize=9, color='black', ha='center')
-            
-        ax1.text(1, S[0] * 0.2, r'$\sigma = $' + f'{S[0]:.2e}', 
-            fontsize=9, color='black', ha='center')
-        
-        # plt.title(f'Singular Values')
-        ax1.grid(True, linestyle='--', alpha=0.3)
-        ax1.set_xticks(np.arange(1, plt_modes + 2, 2))
+        fig_width = 3.35   # inches ≈ 8.5 cm
+        fig_height = 2.5
+        plt.figure(figsize=(fig_width, fig_height))
 
+        plt.semilogy(x, S_np[:plt_modes], 'k-', linewidth=0.8, markersize=4)
+        plt.xlabel(r'$k$')
+        plt.ylabel(r'$\sigma_k$')
+        # plt.tick_params(axis='both', which='major', top=False, right=False)
+        plt.tick_params(axis='y', which='both', left=True, right=False)
+        plt.tick_params(axis='y', which='minor', left=False)
+    
+        plt.grid(True, linewidth=0.5, alpha=0.7)
+        tick_positions = [1] + list(range(10, plt_modes + 1, 10))
+        # ax.set_xticks(tick_positions)
+        plt.xticks(np.array(tick_positions))
+        plt.tight_layout()
 
-        fig.tight_layout()
         if save_path:
-            fig.savefig(save_path, dpi=300, bbox_inches='tight')
-            print(f"✓ Plot saved to {save_path}")
+            save_path = str(save_path)
+            plt.savefig(save_path.replace('.png', '.pdf'), bbox_inches='tight')
+            plt.savefig(save_path.replace('.png', '.eps'), bbox_inches='tight')
+            print(f"✓ figure saved: {save_path}")
+
         plt.close()
+
+    
 
     def print_energy_analysis(self, S, name="POD"):
         total_energy = (S**2).sum()
