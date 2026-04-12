@@ -20,7 +20,7 @@ def main():
     with open(param_filename, 'r') as f:
         phy_dict = json.load(f)
     grid_type = 'uniform'  # Optional: 'uniform' or 'ratio'
-    xi_method = 'RK2'    # Optional: 'approx', 'init', 'Richardson', 'BDF2', 'RK2', 'integral'
+    xi_method = 'EI'    # Optional: 'approx', 'init', 'RE-BDF2', 'BE-BDF2', 'CN', 'EI'
     config = Config(device, dtype)
     
     if grid_type == 'ratio':    
@@ -31,9 +31,10 @@ def main():
     dmesolver._init_phy_ps(phy_dict)
     dt = config._get_time_step(phy_dict)
 
-    result, xi = dmesolver._main_line(dt)
+    result, xi, xiz = dmesolver._main_line(dt)
     torch.save(result, outdata_dir / f'HF_result.pt')
     torch.save(xi, outdata_dir / f'xi.pt')
+    torch.save(xiz, outdata_dir / f'xiz.pt')
 
 
 if __name__ == "__main__":
