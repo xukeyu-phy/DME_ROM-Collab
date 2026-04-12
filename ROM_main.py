@@ -60,7 +60,7 @@ def main():
     torch.save(recon_rho, outdata_dir / 'ROM_result.pt')
 
     S_z = torch.tensor([0.5, 0.25, 0, -0.25, -0.5, 0.25, 0, -0.25])
-    P = 2 * torch.einsum('i, klmi -> klm', S_z, recon_rho)
+    P = torch.einsum('i, klmi -> klm', S_z, recon_rho)
     P = P.cpu()
     torch.save(P, outdata_dir/'ROM_P.pt')  
 
