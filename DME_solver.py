@@ -48,11 +48,10 @@ class DMESolver:
                 rho_n, resi = self.runge_kutta_1_step(rho_n, dt, self.config.ghostcell, self.config.bc_type)
                 l2_resi = torch.norm(torch.abs(resi), p=2)
 
-                xiz_n0 = self.xi[self.Nx//2, self.Ny//2, :, :]
-                self._update_pump_distribution(rho_n, self.xi_method)        
-                xiz_n = self.xi[self.Nx//2, self.Ny//2, :, :]
-                dxiz = torch.abs(xiz_n - xiz_n0)
-                l2_dxiz = torch.norm(dxiz, p=2)
+                xiz_n0 = self.xi.clone()
+                self._update_pump_distribution(rho_n, self.xi_method)
+                xiz_n = self.xi
+                l2_dxiz = torch.norm(xiz_n - xiz_n0, p=2)
 
                 print(f"Iter: {t_iter}, Time: {t:.6f}, l2_residual = {l2_resi:.4e}, l2_dxiz = {l2_dxiz:.4e} ")
                 if l2_resi < self.config.convergence_tol and l2_dxiz < self.config.convergence_tol :
