@@ -56,7 +56,7 @@ class ROMSolver:
 
                 if t_iter % 200 == 1:                                
                     rho_r_n0 = rho_r_n.clone()               
-                    rho_r_n = self.runge_kutta_1_step(rho_r_n, dt, self.config.ghostcell, self.config.bc_type, 'update')
+                    rho_r_n, residual = self.runge_kutta_1_step(rho_r_n, dt, self.config.ghostcell, self.config.bc_type, 'update')
                     drho = torch.abs(rho_r_n - rho_r_n0)
                     l2_drho = torch.norm(drho, p=2)
                     l2_residual = torch.norm(torch.norm(residual), p=2)
