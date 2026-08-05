@@ -37,17 +37,11 @@ class Config:
         min_dy = torch.min(self.dy)  
         min_dz = torch.min(self.dz)
         dd_min = min(min_dx, min_dy, min_dz)
-
-        eig_Asd = 1
-        eig_Afd = 10
-        eig_Ase = torch.sqrt(torch.tensor(3/8))
         Q = max(self.Qa, self.Qb)
 
-        Gamma_Re = 12*D/dd_min **2 + (1+eta)*eig_Asd + eig_Afd*fD + R0*Q
-        Gamma_Im = eig_Ase * eta * 0.5
-
-        dt = self.cfl * 2 * Gamma_Re / (Gamma_Re**2 + Gamma_Im**2)
-        # dt = self.cfl * dd_min
+        beta = 3/4 * (1+eta) + 6*fD + R0*Q + eta/2
+        dt = self.cfl * / (6*D/dd_min**2 + beta)
+        print(f"dt_new = {dt:.6e}")
         
         return dt.clone().detach().to(device=self.device, dtype=self.dtype)
 
