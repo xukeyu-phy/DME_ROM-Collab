@@ -39,50 +39,33 @@ class ROMSolver:
 
     def _main_line(self, dt):
         start_time = time.time()
-        iter_count = 0
-        for iter_count in range(1):
-            rho_init = torch.zeros(self.Nh, 1).to(self.device)
-            rho_init = self._setup_initial_condition(rho_init)
-            alpha_init = self.Phi_r.T @ (
-                rho_init - self.POD_mean.reshape(-1, 1)
-            )
+        rho_init = torch.zeros(self.Nh, 1).to(self.device)
+        rho_init = self._setup_initial_condition(rho_init)
+        rho_r_init = self.Phi_r.T @ (rho_init - self.POD_mean.reshape(-1, 1))
 
-            t = 0.0
-            t_iter = 0
-            alpha_n = alpha_init.clone()
-            while t < self.config.T_final:
-                if (t + dt) >= self.config.T_final:
-                    dt = self.config.T_final - t
-                t += dt
-                t_iter += 1 
+        t = 0.0
+        t_iter = 0
+        rho_r_n = rho_r_init.clone()
+        while t < self.config.T_final:
+            if (t + dt) >= self.config.T_final:
+                dt = self.config.T_final - t
 
-                if t_iter % 200 == 1:                                
-                    alpha_n0 = alpha_n.clone()
-                    alpha_n, residual = self.runge_kutta_1_step(
-                        alpha_n, dt, self.config.ghostcell,
-                        self.config.bc_type, 'update'
-                    )
-                    dalpha = torch.abs(alpha_n - alpha_n0)
-                    l2_dalpha = torch.norm(dalpha, p=2)
-                    l2_residual = torch.norm(torch.norm(residual), p=2)
-                    print(f"Iter: {t_iter}, Time: {t:.6f}, l2_dalpha = {l2_dalpha:.4e}")     
-                    
-                    if l2_residual < self.config.convergence_tol:
-                        print(f'Convergence: l2_residual = {l2_residual:.6e}, l2_dalpha = {l2_dalpha:.6e}')
-                        break
-                else:
-                    alpha_n, _ = self.runge_kutta_1_step(
-                        alpha_n, dt, self.config.ghostcell,
-                        self.config.bc_type, None
-                    )
-
-            iter_count += 1        
-
+            if t_iter % 200 == 0:                                
+                rho_r_old = rho_r_n.clone()
+                rho_r_n = self.runge_kutta_1_step(rho_r_n, dt)
+                l2_drho = torch.norm(rho_r_n - rho_r_old, p=2)                  
+                if l2_drho < self.config.convergence_tol:
+                    print(f'Convergence: Iter: {t_iter}, Time: {t:.6f}, l2_drho = {l2_drho:.6e}')
+                    break
+            else:
+                rho_r_n = self.runge_kutta_1_step(rho_r_n, dt)
+            t += dt
+            t_iter += 1 
+     
         end_time = time.time()
         runtime =  end_time - start_time
-        print(f"Runtime: {runtime:.3f}s, 1 case time: {runtime/iter_count:3f}")
-        # self.print_deim_timing()
-        return alpha_n
+        print(f"Runtime: {runtime:.3f}s, 1 case time: {runtime:3f}")
+        return rho_r_n
 
     def _setup_initial_condition(self, rho):
         if self.config.initial_condition_type == 'uniform':
@@ -192,32 +175,28 @@ class ROMSolver:
 
         C_NQE = S_dot_rho * A_SE_rho
         C_NQE = self.Phi_r.T @ C_NQE
-        self.C_NQE_alpha = C_NQE
+        self.C_NQE_rho_r = C_NQE
 
-    def rom_rhs_diffusion(self, alpha):
-        return self.nabla_r @ alpha
+    def rom_rhs_diffusion(self, rho_r):
+        return self.nabla_r @ rho_r
 
-    def rom_rhs_G0(self, alpha):
-        return self.G0_r @ alpha
+    def rom_rhs_G0(self, rho_r):
+        return self.G0_r @ rho_r
 
-    def rom_rhs_GNL_NQE(self, alpha):
-        alpha_flat = alpha.flatten()
-        rho_outer = torch.outer(alpha_flat, alpha_flat)
+    def rom_rhs_GNL_NQE(self, rho_r):
+        rho_r_flat = rho_r.flatten()
+        rho_outer = torch.outer(rho_r_flat, rho_r_flat)
         rho_outer_flat = rho_outer.flatten().unsqueeze(0)
-        A_NQE_alpha = self.A_NQE @ rho_outer_flat.T
-        B_NQE_alpha = self.B_NQE @ alpha
+        A_NQE_rho_r = self.A_NQE @ rho_outer_flat.T
+        B_NQE_rho_r = self.B_NQE @ rho_r
 
-        rhs_GNL_r = -self.config.eta * (
-            A_NQE_alpha + B_NQE_alpha + self.C_NQE_alpha
-        )
+        rhs_GNL_r = -self.config.eta * (A_NQE_rho_r + B_NQE_rho_r + self.C_NQE_rho_r)
         return rhs_GNL_r
 
-    def rhs(self, rho, update=None):
-        # The optical-pumping term is evaluated at the current RK stage.
-        # ``update`` is retained only for compatibility with ROM_main.py.
+    def rhs(self, rho):
         rhs_vib = (
             -self.rom_rhs_G0(rho)
-            -self.rom_rhs_Gop_DEIM_paper(rho)
+            -self.rom_rhs_Gop_DEIM(rho)
             -self.rom_rhs_GNL_NQE(rho)
             +self.rom_rhs_diffusion(rho)
         )
@@ -226,21 +205,11 @@ class ROMSolver:
         return rhs
 
 
-    def runge_kutta_2_step(self, rho_n, dt, ghostcell=None, bc_type=None, update=None):
-        k1 = self.rhs(rho_n, update)
-        rho_1 = rho_n + dt * k1
-
-        k2 = self.rhs(rho_1, update)
-        rho_new = rho_n + (dt/2.0) * (k1 + k2)
-        
-        return rho_new
-
-
-    def runge_kutta_1_step(self, rho_n, dt, ghostcell=None, bc_type=None, update=None):
-        k1 = self.rhs(rho_n, update)
+    def runge_kutta_1_step(self, rho_n, dt):
+        k1 = self.rhs(rho_n)
         rho_1 = rho_n + dt * k1
         
-        return rho_1, k1
+        return rho_1
     
 
     def rom_DEIM_preperform(self):
@@ -250,37 +219,25 @@ class ROMSolver:
         z = z.to(self.device)
         self.config.w = self.config.w.to(self.device)
 
-        # Paper notation: V, U_f, P, and rho_bar.
-        V = self.Phi_r
-        U_f = self.Phi_Gop_deim
-        P = self.P_f
-        rho_bar = self.POD_mean
-
-        # calD = V^T U_f (P^T U_f)^{-1}
-        PTU_f = U_f[P, :]
-        self.calD = V.T @ U_f @ torch.linalg.inv(PTU_f)
-        # Retain the original class attribute used by earlier ROM code.
-        self.GopTmp = self.calD
+        # D = V^T U_f (P^T U_f)^{-1}
+        Phi_Gop_deim_P = self.Phi_Gop_deim[self.P_f, :]
+        self.calD = self.Phi_r.T @ self.Phi_Gop_deim @ torch.linalg.inv(Phi_Gop_deim_P)
 
         # Map each selected scalar index p_s to (i_s, j_s, k_s, q_s).
         # V and rho_bar contain interior nodes only, so i_s, j_s,
         # and k_s below are interior-local indices.
-        spatial_indices = torch.div(P, 8, rounding_mode='floor')
+        spatial_indices = torch.div(self.P_f, 8, rounding_mode='floor')
         # comp_indices is the zero-based representation of q_s=1,...,8.
-        self.comp_indices = P % 8
+        self.comp_indices = self.P_f % 8
 
         self.M = spatial_indices.numel()
-        if self.M != self.rf:
-            raise ValueError("The DEIM index set P must contain m entries.")
 
         self.k_idx = (spatial_indices % self.N).to(self.device)
         self.j_idx = ((spatial_indices // self.N) % self.N).to(self.device)
         self.i_idx = (spatial_indices // (self.N * self.N)).to(self.device)
 
-        # Selected physical coordinates and
+
         # xi_P = exp[-OD*z_s - 2*(x_s^2+y_s^2)/w^2].
-        # The +1 shift maps an interior-local index to the full grid,
-        # whose index zero is the prescribed inflow boundary.
         self.x_m = x[self.i_idx+1, self.j_idx+1, self.k_idx+1]
         self.y_m = y[self.i_idx+1, self.j_idx+1, self.k_idx+1]
         self.z_m = z[self.i_idx+1, self.j_idx+1, self.k_idx+1]
@@ -296,20 +253,16 @@ class ROMSolver:
             spatial_components.extend(range(start, start + 8))
         spatial_components = torch.tensor(spatial_components, device=self.device)
 
-        V_P_components = V[spatial_components, :].reshape(self.M, 8, self.r)
-        rho_bar_P_components = rho_bar[spatial_components].reshape(self.M, 8)
+        V_P_components = self.Phi_r[spatial_components, :].reshape(self.M, 8, self.r)
+        rho_bar_P_components = self.POD_mean[spatial_components].reshape(self.M, 8)
 
         # calF and f satisfy
         # [A_OP (V*alpha+rho_bar)]_{q_s} = (calF*alpha)_s + f_s.
         A_op_V = torch.einsum('qd,mdr->mqr', self.config.A_op, V_P_components)
-        A_op_rho_bar = torch.einsum(
-            'qd,md->mq', self.config.A_op, rho_bar_P_components
-        )
+        A_op_rho_bar = torch.einsum('qd,md->mq', self.config.A_op, rho_bar_P_components)
         selected_rows = torch.arange(self.M, device=self.device)
         self.calF = A_op_V[selected_rows, self.comp_indices, :].contiguous()
-        self.f = A_op_rho_bar[
-            selected_rows, self.comp_indices
-        ].unsqueeze(-1).contiguous()
+        self.f = A_op_rho_bar[selected_rows, self.comp_indices].unsqueeze(-1).contiguous()
 
         # Collect the reduced basis and mean state along every selected
         # upstream axial ray. Duplicate rays are intentionally retained to
@@ -321,16 +274,10 @@ class ROMSolver:
             base[None, :]
         )
         line_spatial = line_base_indices.reshape(-1)
-        line_integral_components = (
-            line_spatial[:, None] * 8 +
-            torch.arange(8, device=self.device)[None, :]
-        ).reshape(-1)
-        V_lines = V[line_integral_components, :].reshape(
-            self.M, self.N, 8, self.r
-        )
-        rho_bar_lines = rho_bar[line_integral_components].reshape(
-            self.M, self.N, 8
-        )
+        line_integral_components = (line_spatial[:, None] * 8 +
+            torch.arange(8, device=self.device)[None, :]).reshape(-1)
+        V_lines = self.Phi_r[line_integral_components, :].reshape(self.M, self.N, 8, self.r)
+        rho_bar_lines = self.POD_mean[line_integral_components].reshape(self.M, self.N, 8)
 
         S_V_lines = torch.einsum('d,mkdr->mkr', self.config.S_z, V_lines)
         S_rho_bar_lines = torch.einsum(
@@ -345,22 +292,14 @@ class ROMSolver:
 
         rho_bc = torch.full((8,), self.config.bc_value, device=self.device)
         S_rho_bc = torch.dot(self.config.S_z, rho_bc)
-        S_rho_bar_full = torch.full(
-            (self.M, self.N+2), S_rho_bc.item(), device=self.device
-        )
+        S_rho_bar_full = torch.full((self.M, self.N+2), S_rho_bc.item(), device=self.device)
         S_rho_bar_full[:, 1:-1] = S_rho_bar_lines
 
         # Each selected interior ray uses the cell widths from the full grid.
-        dz_selected = self.config.dz[
-            self.i_idx+1, self.j_idx+1, :, 0
-        ].to(self.device)
+        dz_selected = self.config.dz[self.i_idx+1, self.j_idx+1, :, 0].to(self.device)
 
-        trapezoid_V = 0.5 * (
-            S_V_full[:, :-1, :] + S_V_full[:, 1:, :]
-        ) * dz_selected.unsqueeze(-1)
-        trapezoid_rho_bar = 0.5 * (
-            S_rho_bar_full[:, :-1] + S_rho_bar_full[:, 1:]
-        ) * dz_selected
+        trapezoid_V = 0.5 * (S_V_full[:, :-1, :] + S_V_full[:, 1:, :]) * dz_selected.unsqueeze(-1)
+        trapezoid_rho_bar = 0.5 * (S_rho_bar_full[:, :-1] + S_rho_bar_full[:, 1:]) * dz_selected
 
         integral_V = torch.zeros_like(S_V_full)
         integral_rho_bar = torch.zeros_like(S_rho_bar_full)
@@ -370,17 +309,17 @@ class ROMSolver:
         # calE*alpha+e is the integral from z=0 to the selected physical node.
         selected_k_full = self.k_idx + 1
         self.calE = integral_V[selected_rows, selected_k_full, :].contiguous()
-        self.e = integral_rho_bar[
-            selected_rows, selected_k_full
-        ].unsqueeze(-1).contiguous()
+        self.e = integral_rho_bar[selected_rows, selected_k_full].unsqueeze(-1).contiguous()
 
-    def rom_rhs_Gop_DEIM(self, alpha):
+
+
+    def rom_rhs_Gop_DEIM(self, rho_r):
 
         # I(alpha) = calE*alpha+e
-        I_alpha = self.calE @ alpha + self.e
+        I_alpha = self.calE @ rho_r + self.e
 
         # [A_OP*rho_r]_P = calF*alpha+f
-        local_action_P = self.calF @ alpha + self.f
+        local_action_P = self.calF @ rho_r + self.f
 
         # f_OP,P(alpha) = R0*xi_P*exp[2*OD*I(alpha)]*(calF*alpha+f)
         f_OP_P = (
@@ -389,6 +328,6 @@ class ROMSolver:
             * torch.exp(2 * self.config.OD * I_alpha)
             * local_action_P
         )
-        self.rhs_Gop_r = self.GopTmp @ f_OP_P
+        self.rhs_Gop_r = self.calD @ f_OP_P
 
         return self.rhs_Gop_r
