@@ -25,7 +25,7 @@ class DMESolver:
     def _init_phy_ps(self, phy_ps):
         self.config._setup_phy_ps(phy_ps)
         self.config._setup_matrices(self.config.Qa, self.config.Qb)
-        self._pump_distribution('init')
+
 
 
     def _main_line(self, dt):
@@ -33,6 +33,7 @@ class DMESolver:
         rho_init = torch.zeros((self.config.Nx, self.config.Ny, self.config.Nz, 8), device=self.device)
         rho_init = self._setup_initial_condition(rho_init)
         rho_init = self._setup_boundary_conditions(rho_init, self.config.ghostcell, self.config.bc_type, self.config.bc_value)
+        self._update_pump_distribution(rho_init) 
 
         t = 0.0
         t_iter = 0
