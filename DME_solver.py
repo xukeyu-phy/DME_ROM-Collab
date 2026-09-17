@@ -4,7 +4,7 @@ from config import Config
 
 
 class DMESolver:
-    def __init__(self, device, dtype, phy_ps, grid_type, xi_method, data_dir):
+    def __init__(self, device, dtype, phy_ps, grid_type, data_dir):
         self.device = device
         self.config = Config(device, dtype)
         torch.set_default_dtype(dtype)
@@ -15,7 +15,6 @@ class DMESolver:
             self.config._create_non_uniform_grid(data_dir)
         else:
             raise ValueError(f"Unsupported grid type: {grid_type}")
-        self.xi_method = xi_method
         self._init_phy_ps(phy_ps)
         self.config._setup_coefficient()        
         self.Nx = self.config.grid_x.shape[0]
@@ -26,7 +25,7 @@ class DMESolver:
     def _init_phy_ps(self, phy_ps):
         self.config._setup_phy_ps(phy_ps)
         self.config._setup_matrices(self.config.Qa, self.config.Qb)
-        self._update_pump_distribution(None, 'init')
+        self._pump_distribution('init')
 
 
     def _main_line(self, dt):
@@ -42,95 +41,63 @@ class DMESolver:
         while t < self.config.T_final:
             if (t + dt) >= self.config.T_final:
                 dt = self.config.T_final - t
-            t += dt
-            t_iter += 1                   
-            if t_iter % 200 == 1:             
-                rho_n, resi = self.runge_kutta_1_step(rho_n, dt, self.config.ghostcell, self.config.bc_type)
-                l2_resi = torch.norm(torch.abs(resi), p=2)
+           
+            if t_iter % 200 == 0:                   
+                rho_old = rho_n.clone()    
+                xiz_old = self.xiz.clone()   
+                rho_n = self.runge_kutta_1_step(rho_n, dt, self.config.ghostcell, self.config.bc_type)
+                self._update_pump_distribution(rho_n)      
+                l2_drho = torch.norm(rho_n - rho_old, p=2)
+                l2_dxiz = torch.norm(self.xiz - xiz_old, p=2)
 
-                xiz_n0 = self.xi.clone()
-                self._update_pump_distribution(rho_n, self.xi_method)
-                xiz_n = self.xi
-                l2_dxiz = torch.norm(xiz_n - xiz_n0, p=2)
-
-                print(f"Iter: {t_iter}, Time: {t:.6f}, l2_residual = {l2_resi:.4e}, l2_dxiz = {l2_dxiz:.4e} ")
-                if l2_resi < self.config.convergence_tol and l2_dxiz < self.config.convergence_tol :
-                    print(f'Convergence: l2_residual = {l2_resi:.6e}, l2_dxiz = {l2_dxiz:.4e}')
+                if l2_drho < self.config.convergence_tol and l2_dxiz < self.config.convergence_tol :
+                    print(f'Convergence: Iter: {t_iter}, Time: {t:.6f}, l2_drho = {l2_drho:.6e}, l2_dxiz = {l2_dxiz:.4e}')
                     break
+
             else:
-                rho_n, _ = self.runge_kutta_1_step(rho_n, dt, self.config.ghostcell, self.config.bc_type)
-            
+                rho_n = self.runge_kutta_1_step(rho_n, dt, self.config.ghostcell, self.config.bc_type)
+                self._update_pump_distribution(rho_n)
+
+            t += dt
+            t_iter += 1        
         end_time = time.time()
         runtime =  end_time - start_time
         print(f"Runtime: {runtime:.3f}s")    
         return rho_n, self.xi, self.xiz
 
-
-    def _update_pump_distribution(self, rho, method):
+    def _pump_distribution(self, method):
         x, y, z = self.config.grid_x, self.config.grid_y, self.config.grid_z
         x = x.unsqueeze(-1)
         y = y.unsqueeze(-1)
         z = z.unsqueeze(-1)
         x = x.to(self.device)
         y = y.to(self.device)
-        self.config.w = self.config.w.to(self.device)
-        xi_xy = torch.exp(-2*(x**2 + y**2)/(self.config.w**2))
+        z = z.to(self.device)
+        self.xi_xy = torch.exp(-2*(x**2 + y**2)/(self.config.w**2))
         xi_z = torch.ones_like(z, device=self.device)
 
         if method == 'approx':            
             xi_z = torch.exp(-self.config.OD * z)
 
         elif method == 'init':
-            xi_z = torch.ones_like(z, device=self.device)
+            xi_z = torch.exp(-self.config.OD * z)
 
-        elif method == 'RE-BDF2':
-            dz = self.config.dz
-            Srho = torch.einsum('i,klmi->klm', self.config.S_z, rho)
-            Srho = Srho.unsqueeze(-1)
-            xi_z[:, :, 0, :] = 1.0
-            xi_z_h = xi_z[:, :, 0, :] / (1 + self.config.OD * dz[:, :, 0] * (1 - 2 * Srho[:, :, 1, :]))
-            Srho_half = ( Srho[:, :, 0, :] + Srho[:, :, 1, :] ) *0.5
-            xi_z_half = xi_z[:, :, 0, :] /  (1 + self.config.OD * dz[:, :, 0] * 0.5 * (1 - 2 * Srho_half))
-            xi_z_h2 = xi_z_half /  (1 + self.config.OD * dz[:, :, 0] * 0.5 * (1 - 2 * Srho[:, :, 1, :]))
-            xi_z[:, :, 1, :] = 2 * xi_z_h2 - xi_z_h
-            for ii in range(2, self.Nz):
-                xi_z[:, :, ii, :] = (4 * xi_z[:, :, ii-1, :] - xi_z[:, :, ii-2, :]) / (3 + 2 * self.config.OD * dz[:, :, ii-1] * (1 - 2 * Srho[:, :, ii, :]))        
+        self.xi = self.xi_xy * xi_z
+        self.xiz= xi_z
 
-        elif method == 'BE-BDF2':
-            dz = self.config.dz
-            Srho = torch.einsum('i,klmi->klm', self.config.S_z, rho)
-            Srho = Srho.unsqueeze(-1)
-            xi_z[:, :, 0, :] = 1.0
-            xi_z[:, :, 1, :] = xi_z[:, :, 0, :] / (1 + self.config.OD * dz[:, :, 0] * (1 - 2 * Srho[:, :, 1, :]))            
-            for ii in range(2, self.Nz):
-                xi_z[:, :, ii, :] = (4 * xi_z[:, :, ii-1, :] - xi_z[:, :, ii-2, :]) / (3 + 2 * self.config.OD * dz[:, :, ii-1] * (1 - 2 * Srho[:, :, ii, :]))        
+    def _update_pump_distribution(self, rho):
 
-        elif method == 'CN':
-            dz = self.config.dz
-            Srho = torch.einsum('i,klmi->klm', self.config.S_z, rho)
-            Srho = Srho.unsqueeze(-1)
-            xi_z[:, :, 0, :] = 1.0
-            f1 = 0.5 * self.config.OD * dz[:, :, :] * (1 - 2 * Srho[:, :, :-1, :])
-            f2 = 0.5 * self.config.OD * dz[:, :, :] * (1 - 2 * Srho[:, :, 1:, :])
-            for ii in range(1, self.Nz):
-                xi_z[:, :, ii, :] = xi_z[:, :, ii-1, :] * (1 - f1[:, :, ii-1, :]) / (1 + f2[:, :, ii-1, :])
+        trapezoid_areas = 0.5 * (rho[:, :, :-1, :] + rho[:, :, 1:, :]) * self.config.dz
+        integral_component = torch.zeros_like(rho)
+        integral_component[:, :, 1:, :] = torch.cumsum(trapezoid_areas, dim=2)
+        integral = torch.sum(self.config.S_z[None, None, None, :] * integral_component, dim=3)
+        exp_integral = torch.exp(2 * self.config.OD * integral) 
+        exp_OD_z = torch.exp(-self.config.OD * self.config.grid_z)              
 
-        elif method == 'EI':
-            dz = self.config.dz
-            trapezoid_areas = 0.5 * (rho[:, :, :-1, :] + rho[:, :, 1:, :]) * dz
-            integral_component = torch.zeros_like(rho)
-            integral_component[:, :, 1:, :] = torch.cumsum(trapezoid_areas, dim=2)
-            integral = torch.sum(self.config.S_z[None, None, None, :] * integral_component, dim=3)
-            G_OP = torch.exp(2 * self.config.OD * integral) 
-            exp_OD_z = torch.exp(-self.config.OD * self.config.grid_z)              
+        xi_z = exp_OD_z * exp_integral 
+        xi_z = xi_z.unsqueeze(-1)
 
-            xi_z = exp_OD_z * G_OP 
-            xi_z = xi_z.unsqueeze(-1)
-
-        else:
-            print(f'Wrong in Xi_z update!')
-
-        self.xi = xi_xy * xi_z
+        self.xi = self.xi_xy * xi_z
         self.xiz= xi_z
 
 
